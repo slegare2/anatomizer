@@ -175,16 +175,16 @@ class AgentAnatomy(object):
                                          ('beg', start), ('end', end), 
                                          ('database', 'Pfam') ])
                 self.features['topology'].append(newentry)
-            # Domains without a Pfam family (Ignore?)
-            if 'class="domain"' in line and 'transmembrane' not in line:
-                name = line[19:-5]
-                linestart = self.pfam[i+2].lstrip()
-                lineend = self.pfam[i+3].lstrip()
-                start, end = int(linestart[4:-5]), int(lineend[4:-5])
-                newentry = OrderedDict([ ('name', name), 
-                                         ('beg', start), ('end', end), 
-                                         ('database', 'Pfam') ])
-                self.features['domains'].append( OrderedDict(newentry) 
+#            # Domains without a Pfam family (Ignore?)
+#            if 'class="domain"' in line and 'transmembrane' not in line:
+#                name = line[19:-5]
+#                linestart = self.pfam[i+2].lstrip()
+#                lineend = self.pfam[i+3].lstrip()
+#                start, end = int(linestart[4:-5]), int(lineend[4:-5])
+#                newentry = OrderedDict([ ('name', name), 
+#                                         ('beg', start), ('end', end), 
+#                                         ('database', 'Pfam') ])
+#                self.features['domains'].append(newentry) 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
     # ////////////// iPfam /////////////////////////
