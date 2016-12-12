@@ -1,4 +1,4 @@
-""" Class AgentAnatomizer. 
+""" Class AgentAnatomy. 
 
 Provide the structural features of a protein based on information from 
 biological knowledge databases.
