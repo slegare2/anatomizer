@@ -1,0 +1,249 @@
+#! /usr/bin/python3
+
+# This is the Agent Anatomizer development file.
+# It uses Python 3.
+#
+# Usage: ./anatomizer <UniProt AC>
+#
+
+# Ontology of domains and mapping
+# rdf
+# PEP8, 
+
+
+import sys
+import urllib.request
+import json
+
+from collections import OrderedDict
+
+class AgentAnatomy(object):
+  """
+  Gather structural information about protein with given UniProt Accession Number.
+  """
+
+  # Feature Types: 1.topo 2.domain 3.repeat 4.motif 5.ptnbind 6.orgbind 7.activesite 8.phospho 9.mutation 10.glyco 11.other
+  features = OrderedDict([ ('topology', []), ('domains', []) ])
+
+  
+  def __init__(self, uniprotac):
+    self.uniprotac = uniprotac
+
+  # +++++++++++++ UniProt ++++++++++++++++
+  
+  def get_uniprot(self):
+    """ Retrieve UniProt entry from the web. """
+    fetchfile = urllib.request.urlopen('http://www.uniprot.org/uniprot/%s.txt' % self.uniprotac)  # check .rdf , xml
+    readfile = fetchfile.read().decode("utf-8")
+    self.entry = readfile.splitlines()
+    #print(readfile)  # Print web page for debugging
+
+  def find_uniprot(self):
+    """ Alternatively, find UniProt entry in provided uniprot file. """
+    uniprotfile = open('../uniprot_sprot_human.dat','r').read()
+    uniprotlines = uniprotfile.splitlines()
+    print(uniprotfile)  # Print web page for debugging
+
+    l = len(uniprotlines)
+    for i in range(l):
+      linei = self.uniprotfile[i]
+      if linei[0:2] == 'AC' and self.uniprotac in linei: 
+     
+        # Move upward to find beginning of entry.
+        for j in range(i, 0, -1): 
+          linej = uniprotlines[j]
+          if linej[0:2] == '//':
+            start = j+1
+            break 
+
+        # Move downward to find end of entry.
+        for j in range(i, l):
+          linej = uniprotlines[j]
+          if linej[0:2] == '//':
+            end = j
+            break
+        break
+    self.entry = uniprotlines[start:end]
+
+  def format_uniprot(self):
+    """ Extract and format feature lines from Uniprot entry. """
+    ftlist = []
+    counter = 1
+    for line in self.entry:
+      #print(line[2:6])
+      if line[0:2] == 'FT' and line[5] != " ":
+        feature = line[5:]
+
+        # Put a carriage return at then end of previous feature.
+        if counter > 1:
+          ftlist[-1] = ftlist[-1]+'\n'
+
+        # Add feature to list.
+        ftlist.append("%3i  %s" % (counter, feature))
+        counter += 1        
+
+        # Keep track of whether the line ends with a dash. If so, do not put a space while adding info during next if statement.
+        prevdash = 0
+        if feature[-1] == '-':
+          prevdash = 1
+
+      if line[0:2] == 'FT' and line[5] == " ":
+        addedinfo = line[34:]
+        
+        # Add a space if previous line ended with a period or coma.
+        if prevdash == 0:
+          ftlist[-1] = ftlist[-1] + ' ' + addedinfo
+        else:
+          ftlist[-1] = ftlist[-1] + addedinfo
+
+        # Keep track of dashes here too.
+        prevdash = 0
+        if addedinfo[-1] == '-':
+          prevdash = 1
+
+    ftlist[-1] = ftlist[-1]+'\n'
+    self.ftlines = ftlist
+
+  def fill_uniprot(self):
+    """ Fill the data structure (the ordered dictionary) with data from UniProt. """
+    for line in self.ftlines:
+      tokens = line.split()
+
+      # Topological domains
+      if 'TOPO_DOM' in tokens[1] and 'Extracellular' in tokens[4]:
+        start, end = int(tokens[2]), int(tokens[3])
+        self.features['topology'].append( OrderedDict([ ('name', 'extracellular'), ('beg', start), ('end', end), ('database', 'UniProt') ]) )
+
+      if 'TOPO_DOM' in tokens[1] and 'Cytoplasmic' in tokens[4]:
+        start, end = int(tokens[2]), int(tokens[3])
+        self.features['topology'].append( OrderedDict([ ('name', 'cytoplasmic'), ('beg', start), ('end', end), ('database', 'UniProt') ]) )
+
+      if 'TRANSMEM' in tokens[1]:
+        start, end = int(tokens[2]), int(tokens[3])
+        self.features['topology'].append( OrderedDict([ ('name', 'transmembrane'), ('beg', start), ('end', end), ('database', 'UniProt') ]) )
+
+      # Domains
+      if 'DOMAIN' in tokens[1]:
+        # Find the first '.' in domain description
+        for i in range(34,len(line)):
+          if line[i] == '.':
+            break
+        name = line[34:i]
+        start, end = int(tokens[2]), int(tokens[3])
+        self.features['domains'].append( OrderedDict([ ('name', name), ('beg', start), ('end', end), ('database', 'UniProt') ]) )
+
+  # ++++++++++++++++++++++++++++++++++++++++++++++
+  
+
+  # ~~~~~~~~~~~~~~ Pfam ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  def get_pfam(self):
+    """ Retrieve Pfam entry from the web. """
+    fetchfile = urllib.request.urlopen('http://pfam.xfam.org/protein/%s' % self.uniprotac)
+    readfile = fetchfile.read().decode("utf-8")
+    self.pfam = readfile.splitlines()
+    #print(readfile)  # Print web page for debugging
+  
+  def fill_pfam(self):
+    """ Fill the data structure (the ordered dictionary) with data from Pfam. """
+    ndom = len(self.features['domains'])
+    self.pfamidlist = []
+    l = len(self.pfam)
+    for i in range(l):
+      line = self.pfam[i].lstrip()
+
+      if 'class="pfama' in line:
+        pfam = line[17:24]
+        linename = self.pfam[i+1].lstrip()
+        gt = linename[7:].index('>') + 7  # The name is located after the "greater than" symbol
+        name = linename[gt+1:-9]
+        linestart, lineend = self.pfam[i+2].lstrip(), self.pfam[i+3].lstrip()
+        start, end = int(linestart[4:-5]), int(lineend[4:-5])
+        self.features['domains'].append( OrderedDict([ ('name', name), ('beg', start), ('end', end), ('database', 'Pfam'), ('family', pfam) ]) )
+        # Keep a separate list of the Pfam families that were found. Usefull in method fill_ipfam
+        self.pfamidlist.append([pfam, ndom])
+        ndom += 1
+
+      if 'class="domain"' in line and 'transmembrane' in line:  # Transmembrane topological domain
+        linestart, lineend = self.pfam[i+2].lstrip(), self.pfam[i+3].lstrip()
+        start, end = int(linestart[4:-5]), int(lineend[4:-5])
+        self.features['topology'].append( OrderedDict([ ('name', 'transmembrane'), ('beg', start), ('end', end), ('database', 'Pfam') ]) )
+
+      #if 'class="domain"' in line and 'transmembrane' not in line:  # Domains without a Pfam family (Ignore?)
+      #  name = line[19:-5]
+      #  linestart, lineend = self.pfam[i+2].lstrip(), self.pfam[i+3].lstrip()
+      #  start, end = int(linestart[4:-5]), int(lineend[4:-5])
+      #  self.features['domains'].append( OrderedDict([ ('name', name), ('beg', start), ('end', end) ]) ) 
+
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  # ////////////// iPfam /////////////////////////
+
+  # need to make a loop of that
+  def get_ipfam(self, pfamdomain):
+    """ Retrieve Pfam entry from the web. """
+    fetchfile = urllib.request.urlopen('http://ipfam.org/family/%s/fam_int' % pfamdomain[0])
+    readfile = fetchfile.read().decode("utf-8")
+    self.ipfam = readfile.splitlines()
+    #print(readfile)  # Print web page for debugging
+
+  def fill_ipfam(self, pfamdomain):
+    """ Fill the data structure (the ordered dictionary) with data from iPfam. """
+    # First, find which domain entry of self.features corresponds to the member of self.pfamidlist.
+    d = pfamdomain[1]
+    self.features['domains'][d]['iPfam interaction'] = []    
+    # Then, add the interacting Pfam IDs to the domain entry.
+    l = len(self.ipfam)
+    for i in range(l):
+      line = self.ipfam[i].lstrip()
+      if "<td><a href='/family/" in line:
+        pfaminter = line[21:28]
+        self.features['domains'][d]['iPfam interaction'].append(pfaminter)
+
+  def add_ipfam(self):
+    """ Add all the Pfam interaction by looping methods get_ipfam and fill_ipfam. """
+    for dom in self.pfamidlist:
+      self.get_ipfam(dom)
+      self.fill_ipfam(dom)
+
+  # //////////////////////////////////////////////
+
+  # ------------- Display section ----------------
+
+  def displayfeatures(self):
+    """ Print FT lines from Uniprot entry. """
+    for element in self.ftlines:
+      print(element, end='')
+
+  def featuresjson(self):
+    """ Print the agent's features in JSON format. """
+    return json.dumps(self.features, indent=4)
+
+  #-----------------------------------------------
+
+
+# Using class Agent
+def main():
+
+  ac = str(sys.argv[1])
+
+  protein = Agent(ac)
+
+  # UniProt
+  protein.get_uniprot()
+  protein.format_uniprot()
+  protein.fill_uniprot()
+
+  # Pfam
+  protein.get_pfam()
+  protein.fill_pfam()
+
+  # iPfam
+  protein.add_ipfam()
+
+  json = protein.featuresjson()
+  print(json)
+
+
+main()
+
