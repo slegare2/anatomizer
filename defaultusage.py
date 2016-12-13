@@ -1,11 +1,11 @@
 #! /usr/bin/python3
 
-# Default usage of the "agent natomizer".
+# Default usage of the "agent anatomizer".
 
 from anatomizer import AgentAnatomy
 
 
-protein = AgentAnatomy('P00533')
+protein = AgentAnatomy('Q9NWT1')
 
 features = protein.getfeatures()
 
