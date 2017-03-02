@@ -6,28 +6,140 @@ biological knowledge databases.
 
 import urllib.request
 import json
+import re
 from collections import OrderedDict
 
 class AgentAnatomy(object):
     """ 
     Gather structural information about protein with given UniProt 
-    Accession Number.
+    Accession Number or HGNC Gene Symbol.
     """
     # Feature Types: 1.topo 2.domain 3.repeat 4.motif 5.ptnbind 6.orgbind 
     # 7.activesite 8.phospho 9.mutation 10.glyco 11.other
     features = OrderedDict([ ('topology', []), ('domains', []) ])
     
-    def __init__(self, uniprotac):
-        self.uniprotac = uniprotac
-  
+    def __init__(self, query):
+        self.query = query
+
+
+    # /////////// Gene Symbols /////////////
+
+    # This section deals with entries that are
+    # HGNC Gene Symbols rather that UniProt ACs.
+    def possible_acs(self, gene, organism, reviewed):
+        """ 
+        Obtain UniProt accessions associated with a gene symbol for 
+        given organism. 
+        """
+        # Format a UniProt query with input gene name.
+        queryline = '?query=gene:%s&sort=score&format=txt&fil=' % gene
+        if organism != 0:
+            queryline = queryline + 'organism%%3A\"%s\"' % organism
+            if reviewed != 0:
+                queryline = queryline + '+AND+'
+        if reviewed != 0:
+            queryline = queryline + 'reviewed%%3A%s' % reviewed    
+        # Fetch from UniProt.
+        try:
+            queryfile = urllib.request.urlopen('http://www.uniprot.org/uniprot/'
+                                               '%s' % queryline)
+        except:
+            print('\nCannot connect to UniProt. Network may be down\n')
+            exit()
+        readquery = queryfile.read().decode("utf-8")
+        entries = readquery.splitlines()
+        # Search output for UniProt entries with GN Name or Synonyms that
+        # exactly match the searched gene (case insensitive).
+        nentries = 0 # Number of entries before filtering for exact gene name.
+        aclist = []
+        for i in range(len(entries)):
+            line = entries[i]
+            # Get UniProt ID and Accession number.
+            if line[0:5] == 'ID   ':
+                nentries += 1
+                tokens = line.split()
+                uniprotid = tokens[1]
+                nextline = entries[i+1]
+                nexttokens = nextline.split()
+                uniprotac = nexttokens[1][:-1]
+                entry = [uniprotid, uniprotac]
+            # Check if the gene name really matches.
+            if line[0:5] == 'GN   ':
+                names = line[5:]
+                if re.search('[= /]%s[,;/ ]' % gene.lower(), names.lower()):
+                    entry.append(names)
+                    aclist.append(entry)
+        return aclist
+    
+    def getac_from_gene(self, genesymbol):
+        """ Obtain UniProt AD assuming the user searches human genes. """
+        organism = 'human'
+        # Get UniProt accession numbers matching with input gene name (all species).
+        allspecies = self.possible_acs(genesymbol, 0, 'yes')
+        nall = len(allspecies)
+        # Get UniProt accession numbers matching with input gene name (defined species).
+        defspecies = self.possible_acs(genesymbol, organism, 'yes')
+        ndef = len(defspecies)
+        # Print results and suggestions to the user.
+        print('\nQuery does not match any UniProt entry.\n')
+        print('Treating query as a HGNC Gene Symbol. ' 
+              'Trying to get UniProt AC for gene "%s"\n' %genesymbol)
+        print('%i reviewed (SwissProt) UniProt ACs correspond to gene ' 
+              'symbol or synonym "%s".' % (nall, genesymbol) )
+        if nall > 0:
+            print('List1 =', end="")
+            for entry in allspecies:
+                print(' %s' % entry[1], end="")
+            print('')
+        print('')
+        if nall > 0:
+            print('%i reviewed (SwissProt) UniProt ACs '
+                  'from organism "%s".' % (ndef, organism) )
+            if ndef > 0:
+                print('List2 =', end="")
+                for entry in defspecies:
+                    print(' %s' % entry[1], end="")
+                print('')
+            print('')
+        if nall == 0:
+            print('No match found. Please check if gene symbol or '
+                  'UniProt AC as correctly entered.\n')
+        if nall > 0 and ndef == 0:
+            print('No match found for organism "%s". You may '
+                  'want to check ACs from List1, if any.\n' % org)
+        if ndef == 1:
+            print('Running AgentAnatomy with UniProt AC : %s \n' % defspecies[0][1] )
+            return defspecies[0][1]
+        if ndef > 1:
+            print('Many possible choices. The AC you are looking '
+                  'for is most likely in List2.')
+            print('Please review ACs from List2 on UniProt '
+                  'to choose the proper AC and rerun')
+            print('AgentAnatomy with the chosen AC.\n')
+        if nall == 0 or ndef != 1:
+            print('Aborting. No instance of AgentAnatomy was created.\n')
+            exit()
+
+    # //////////////////////////////////////
+
+
     # +++++++++++++ UniProt ++++++++++++++++
+
     def get_uniprot(self):
         """ Retrieve UniProt entry from the web. """
-        fetchfile = urllib.request.urlopen('http://www.uniprot.org/uniprot/'
-                                           '%s.txt' % self.uniprotac)
+        try:
+            fetchfile = urllib.request.urlopen('http://www.uniprot.org/'
+                                               'uniprot/%s.txt' % self.query)
+            self.uniprotac = self.query
+            print('\nUniProt entry found. Creating instance of AgentAnatomy.\n')
+        except:
+            self.uniprotac = self.getac_from_gene(self.query)
+            fetchfile = urllib.request.urlopen('http://www.uniprot.org/'
+                                               'uniprot/%s.txt' % self.uniprotac)
         readfile = fetchfile.read().decode("utf-8")
         self.entry = readfile.splitlines()
         #print(readfile)  # Print web page for debugging
+
   
     def find_uniprot(self):
         """ Alternatively, find UniProt entry in provided uniprot file. """
@@ -54,8 +166,9 @@ class AgentAnatomy(object):
                 break
         self.entry = uniprotlines[start:end]
   
+
     def format_uniprot(self):
-        """ Extract and format feature lines from Uniprot entry. """
+        """ Extract and format feature lines from UniProt entry. """
         ftlist = []
         counter = 1
         for line in self.entry:
@@ -87,6 +200,7 @@ class AgentAnatomy(object):
         ftlist[-1] = ftlist[-1]+'\n'
         self.ftlines = ftlist
   
+
     def fill_uniprot(self):
         """ 
         Fill the data structure (the ordered dictionary) with 
@@ -126,9 +240,12 @@ class AgentAnatomy(object):
                                          ('beg', start), ('end', end), 
                                          ('database', 'UniProt') ])
                 self.features['domains'].append(newentry)
+
     # ++++++++++++++++++++++++++++++++++++++++++++++
     
+
     # ~~~~~~~~~~~~~~ Pfam ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
     def get_pfam(self):
         """ Retrieve Pfam entry from the web. """
         fetchfile = urllib.request.urlopen('http://pfam.xfam.org/protein/'
@@ -137,6 +254,7 @@ class AgentAnatomy(object):
         self.pfam = readfile.splitlines()
         #print(readfile)  # Print web page for debugging
     
+
     def fill_pfam(self):
         """ 
         Fill the data structure (the ordered dictionary) with 
@@ -185,9 +303,11 @@ class AgentAnatomy(object):
 #                                         ('beg', start), ('end', end), 
 #                                         ('database', 'Pfam') ])
 #                self.features['domains'].append(newentry) 
+
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   
     # ////////////// iPfam /////////////////////////
+
     def get_ipfam(self, pfamdomain):
         """ Retrieve Pfam entry from the web. """
         fetchfile = urllib.request.urlopen('http://ipfam.org/family/'
@@ -196,6 +316,7 @@ class AgentAnatomy(object):
         self.ipfam = readfile.splitlines()
         #print(readfile)  # Print web page for debugging
   
+
     def fill_ipfam(self, pfamdomain):
         """ 
         Fill the data structure (the ordered dictionary) with 
@@ -212,6 +333,7 @@ class AgentAnatomy(object):
             if "<td><a href='/family/" in line:
                 inter = line[21:28]
                 self.features['domains'][d]['iPfam interaction'].append(inter)
+
   
     def add_ipfam(self):
         """ 
@@ -221,20 +343,27 @@ class AgentAnatomy(object):
         for dom in self.pfamidlist:
             self.get_ipfam(dom)
             self.fill_ipfam(dom)
+
     # //////////////////////////////////////////////
+
   
     # ------------- Display methods ----------------
+
     def displayfeatures(self):
-        """ Print FT lines from Uniprot entry. """
+        """ Print FT lines from UniProt entry. """
         for element in self.ftlines:
             print(element, end='')
+
   
     def featuresjson(self):
         """ Print the agent's features in JSON format. """
         return json.dumps(self.features, indent=4)
+
     # ----------------------------------------------
   
+
     # Default usage
+
     def getfeatures(self):
         """ Query information from the web and outputs to JSON. """
         # UniProt
