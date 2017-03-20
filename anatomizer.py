@@ -44,7 +44,7 @@ class AgentAnatomy(object):
             queryfile = urllib.request.urlopen('http://www.uniprot.org/uniprot/'
                                                '%s' % queryline)
         except:
-            print('\nCannot connect to UniProt. Network may be down\n')
+            print('\nCannot connect to UniProt. Network may be down.\n')
             exit()
         readquery = queryfile.read().decode("utf-8")
         entries = readquery.splitlines()

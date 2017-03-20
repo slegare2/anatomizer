@@ -5,7 +5,7 @@
 from anatomizer import AgentAnatomy
 
 
-protein = AgentAnatomy('Q9NWT1')
+protein = AgentAnatomy('P19174')
 
 features = protein.getfeatures()
 
