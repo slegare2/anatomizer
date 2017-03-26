@@ -2,12 +2,23 @@
 
 # Default usage of the "agent anatomizer".
 
-from anatomizer import AgentAnatomy
+from anatomizer2 import AgentAnatomy
+import json
 
 
-protein = AgentAnatomy('P19174')
+agent = AgentAnatomy('stat6')
 
-features = protein.getfeatures()
+agent.get_proteins()
+agent.proteins()
 
-print(features)
+agent.get_features()
+#agent.features()
+
+agent.merge_features()
+#agent.mergedfeatures()
+
+agent.nest_features()
+agent.nestedfeatures()
+
+agent.kami()
 
